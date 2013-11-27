@@ -1,0 +1,128 @@
+#!/bin/sh
+# getruckusapnames
+
+# list all APs on the Ruckus ZoneDirector
+# including mac address, IP, model + description
+#
+#William Burns
+
+DATE=""
+DATE=`date "+%F-%T"`
+
+STATIONMAC=""
+BSSID=""
+SSID=""
+
+DEBUG=false
+#DEBUG=true
+
+SORT=false
+SORT=true
+
+SEDFORMAT=false
+#SEDFORMAT=true
+
+SHOWTOTALS=false
+SHOWTOTALS=true
+
+NEWBSSID=false; NEWSSID=false
+
+#Change CONTROLLERADDRESS to your own ZD controller address
+CONTROLLERADDRESS=192.168.1.99
+
+OID="1.3.6.1.4.1.25053.1.2.2.4.1.1.1.1"
+
+
+while echo $1 |grep "^-" >/dev/null
+do
+  case $1 in
+    "--controller" )
+      CONTROLLERADDRESS=$2
+      shift;shift
+      ;;
+    "--sedformat" )
+      SEDFORMAT=true
+      shift
+      ;;
+    "--debug" )
+      DEBUG=true
+      shift
+      ;;
+    "--help" | "-?" | "-h" | * )
+      echo Usage:
+      echo $0 "[OPTIONS] <IP-Address>"
+      echo OPTIONS:
+      echo "--help -? -h"
+      echo "--controller <controlleraddress> ;# query the IP of the specified controller"
+      echo "--debug ;# turn on debugging output"
+      exit
+      ;;
+  esac
+done
+
+
+
+{
+snmpwalk -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS $OID
+} \
+| sed -e 's/^.*'${OID}'.//' \
+| sed -e 's/\./ /' \
+| sort -t" " -k2,2n -k1,1n \
+| { while read FLDNUM RECNUM EQ FLDTYPE VALUE
+do
+  #echo $FLDNUM $RECNUM $EQ $FLDTYPE $VALUE
+  if [ "$FLDNUM" = "2" ]
+  then
+    if [ -z "$MACADDRESS" ]
+    then
+      ! $SEDFORMAT && echo MACADDRESS, APNAME, IPADDRESS, MODEL, DESCRIPTION >&2
+    else
+      echo "${MACADDRESS} ${APNAME} ${IPADDRESS} ${MODEL} ${DESCRIPTION}"
+    fi
+
+    MACADDRESS=$VALUE
+    MACADDRESS=`echo $MACADDRESS| tr -s " " ":"`
+  fi
+
+  if [ "$FLDNUM" = "5" ]
+  then
+    APNAME=$VALUE
+  fi
+
+  if [ "$FLDNUM" = "16" ]
+  then
+    IPADDRESS=$VALUE
+  fi
+
+  if [ "$FLDNUM" = "4" ]
+  then
+    MODEL=$VALUE
+  fi
+
+  if [ "$FLDNUM" = "6" ]
+  then
+    DESCRIPTION=$VALUE
+  fi
+
+done
+echo "${MACADDRESS} ${APNAME} ${IPADDRESS} ${MODEL} ${DESCRIPTION}"
+} \
+| if $SORT
+then
+  sort -k2,2
+else
+  cat
+fi \
+| if $SEDFORMAT
+then
+  echo -e 'sed\c'
+  while read MAC HOSTNAME JUNK
+  do
+    echo ' \'
+    echo -e "  -e 's/${MAC}/${HOSTNAME}/'\c"
+  done \
+  | tr -d '"'
+  echo
+else
+  cat
+fi
