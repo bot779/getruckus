@@ -1,0 +1,4 @@
+#!/bin/sh
+
+/etc/admin/ruckus/getruckus 2>&1 \
+| fgrep "MAC Total" >> /etc/admin/ruckus/apusagelog
