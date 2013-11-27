@@ -1,0 +1,268 @@
+#!/bin/sh
+# getruckus
+
+# list client mac addresses associated to Ruckus APs
+#
+# William Burns
+
+DATE=""
+DATE=`date "+%F-%T"`
+
+STATIONMAC=""
+BSSID=""
+SSID=""
+
+DEBUG=false
+#DEBUG=true
+
+SORT=false
+SORT=true
+
+SHOWTOTALS=false
+SHOWTOTALS=true
+
+#Change CONTROLLERADDRESS to your own ZD controller address
+CONTROLLERADDRESS=192.168.1.99
+
+CLIENTMAC=""
+
+while echo $1 |grep "^-" >/dev/null
+do
+  case $1 in
+    "--controller" )
+      CONTROLLERADDRESS=$2
+      shift;shift
+      ;;
+    "--debug" )
+      DEBUG=true
+      shift
+      ;;
+    "--client" )
+      CLIENTMAC=$2
+      shift;shift
+      ;;
+    "--nosort" )
+      SORT=false
+      shift
+      ;;
+    "--help" | "-?" | "-h" | * )
+      echo Usage:
+      echo $0 "[OPTIONS] <IP-Address>"
+      echo "Dump a list of connected clients"
+      echo OPTIONS:
+      echo "--help -? -h"
+      echo "--controller <controlleraddress> ;# query the IP of the specified controller"
+      echo "--debug  ;# turn on debugging output"
+      echo "--client ;# only report on the specified client"
+      exit
+      ;;
+  esac
+done
+
+
+if [ -z "$CLIENTMAC" ]
+then
+
+# Do the usual.
+# Dump a list of connected clients"
+
+NEWBSSID=false; NEWSSID=false
+
+{
+snmpwalk -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.1
+snmpwalk -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.2
+snmpwalk -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.3
+snmpwalk -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.4
+snmpwalk -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.9
+snmpwalk -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.21
+snmpwalk -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.81
+} \
+| sed -e 's/^.*.25053.1.2.2.1.1.3.1.1.//' \
+| sort -t. -k3,3n -k4,4n -k5,5n -k6,6n -k7,7n -k8,8n -k1,1n \
+| sed -e 's/\./ /' \
+| { while read F1 F2 F3 F4 VALUE
+do
+
+  if [ "$F1" = "1" ]
+  then
+    if [ -z "$STATIONMAC" ]
+    then
+      : # echo
+      echo STATIONMAC, BSSID, SSID, RSSI, SNR, SIGNAL >&2
+    else
+      echo "${STATIONMAC}, ${BSSID}, ${SSID}, ${RSSI}, ${SNR}, ${SIGNAL}"
+      #echo
+    fi
+
+    $DEBUG && echo >&2
+
+    STATIONMAC="$VALUE"
+    if [ "$F4" = "STRING:" ]
+    then
+      STATIONMAC=`echo "$VALUE" | od -t x1 -w20 -N20 | head -1 | sed -e 's/^ *0000000 22 //' -e 's/ 22 0a$//' | tr "[:lower:]" "[:upper:]"`
+      $DEBUG && echo "*** OOPS: changing string $VALUE to hex $STATIONMAC ***" >&2
+      $DEBUG && echo "#STATIONMAC $F1 $F2 $F3 $F4 :" `echo "$VALUE"| od -c -w20 -N20 | head -1` |sed -e 's/: 0000000/:/' -e 's/ \\n$//' >&2
+    else
+      $DEBUG && echo "#STATIONMAC $F1 $F2 $F3 $F4 : $VALUE" >&2
+    fi
+
+  fi
+
+  if [ "$F1" = "2" ]
+  then
+    BSSID="$VALUE"
+    $DEBUG && echo "#BSSID $F1 $F2 $F3 $F4 : $VALUE" >&2
+  fi
+  if [ "$F1" = "3" ]
+  then
+    SSID="$VALUE"
+    $DEBUG && echo "#SSID $F1 $F2 $F3 $F4 : $VALUE" >&2
+  fi
+  if [ "$F1" = "9" ]
+  then
+    RSSI="$VALUE"
+    $DEBUG && echo "#RSSI $F1 $F2 $F3 $F4 : $VALUE" >&2
+  fi
+  if [ "$F1" = "21" ]
+  then
+    SNR="$VALUE"
+    $DEBUG && echo "#SNR $F1 $F2 $F3 $F4 : $VALUE" >&2
+  fi
+  if [ "$F1" = "81" ]
+  then
+    SIGNAL="$VALUE"
+    $DEBUG && echo "#SIGNAL $F1 $F2 $F3 $F4 : $VALUE" >&2
+  fi
+
+  #echo $F1 $F2 $F3 $F4 $VALUE
+done
+echo "${STATIONMAC}, ${BSSID}, ${SSID}, ${RSSI}, ${SNR}, ${SIGNAL}"
+} \
+| if $SORT
+then
+  sort -t, -k2,2 -k3,3 -k1,1 \
+  | {
+  IFS=","
+  PREVBSSID=""
+  PREVSSID=""
+  while read STATIONMAC BSSID SSID RSSI SNR SIGNAL
+  do
+
+    if [ "$SSID" != "$PREVSSID" ]
+    then
+      PREVSSID=`echo $PREVSSID| tr -s " " ":"`
+      $SHOWTOTALS && [ ! -z "$PREVSSID" ] && echo $DATE SSID${PREVSSID} MAC Total $SSIDMACCOUNT
+      SSIDMACCOUNT=1 ; PREVSSID="$SSID"
+    else
+      let SSIDMACCOUNT=$SSIDMACCOUNT+1
+    fi
+
+    if [ "$BSSID" != "$PREVBSSID" ]
+    then
+      PREVBSSID=`echo $PREVBSSID| tr -s " " ":"`
+      $SHOWTOTALS && [ ! -z "$PREVBSSID" ] && echo $DATE BSSID${PREVBSSID} MAC Total $BSSIDMACCOUNT
+      $SHOWTOTALS && [ ! -z "$PREVBSSID" ] && echo
+      let MACTOTAL=$MACTOTAL+BSSIDMACCOUNT
+      BSSIDMACCOUNT=1 ; PREVBSSID="$BSSID"
+    else
+      let BSSIDMACCOUNT=$BSSIDMACCOUNT+1
+    fi
+
+    echo $STATIONMAC, $BSSID, $SSID, $RSSI, $SNR, $SIGNAL
+
+  done
+
+  PREVSSID=`echo $PREVSSID| tr -s " " ":"`
+  PREVBSSID=`echo $PREVBSSID| tr -s " " ":"`
+  let MACTOTAL=$MACTOTAL+BSSIDMACCOUNT
+
+  $SHOWTOTALS && echo $DATE SSID${PREVSSID} MAC Total $SSIDMACCOUNT
+  $SHOWTOTALS && echo $DATE BSSID${PREVBSSID} MAC Total $BSSIDMACCOUNT
+  $SHOWTOTALS && echo $DATE CONTROLLER MAC Total $MACTOTAL
+  }
+else
+  cat
+fi
+
+else
+## a CLIENTMAC was specified
+##
+
+$DEBUG && echo CLIENTMAC = $CLIENTMAC
+
+CLIENTMAC=`\
+echo $CLIENTMAC \
+|tr -d ".:-" \
+|tr "[:lower:]" "[:upper:]" \
+|sed 's/\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)/\1;\2;\3;\4;\5;\6/'
+`
+
+$DEBUG && echo CLIENTMAC = $CLIENTMAC
+
+CLIENTMAC=`(echo "ibase=16; $CLIENTMAC;") | bc`
+
+$DEBUG && echo CLIENTMAC = $CLIENTMAC
+
+CLIENTMAC=`echo $CLIENTMAC| tr " " "."`
+
+$DEBUG && echo CLIENTMAC = $CLIENTMAC
+
+(
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.1.6.$CLIENTMAC
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.2.6.$CLIENTMAC
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.3.6.$CLIENTMAC
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.4.6.$CLIENTMAC
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.5.6.$CLIENTMAC
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.6.6.$CLIENTMAC
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.7.6.$CLIENTMAC
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.8.6.$CLIENTMAC
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.9.6.$CLIENTMAC
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.10.6.$CLIENTMAC
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.11.6.$CLIENTMAC
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.12.6.$CLIENTMAC
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.13.6.$CLIENTMAC
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.14.6.$CLIENTMAC
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.15.6.$CLIENTMAC
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.16.6.$CLIENTMAC
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.17.6.$CLIENTMAC
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.18.6.$CLIENTMAC
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.19.6.$CLIENTMAC
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.20.6.$CLIENTMAC
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.21.6.$CLIENTMAC
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.22.6.$CLIENTMAC
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.23.6.$CLIENTMAC
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.24.6.$CLIENTMAC
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.30.6.$CLIENTMAC
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.80.6.$CLIENTMAC
+snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.81.6.$CLIENTMAC
+) \
+| sed -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.1.6.[^=]* =/ruckusZDWLANStaMacAddr\t\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.2.6.[^=]* =/ruckusZDWLANStaAPMacAddr\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.3.6.[^=]* =/ruckusZDWLANStaBSSID\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.4.6.[^=]* =/ruckusZDWLANStaSSID\t\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.5.6.[^=]* =/ruckusZDWLANStaUser\t\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.6.6.[^=]* =/ruckusZDWLANStaRadioType\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.7.6.[^=]* =/ruckusZDWLANStaChannel\t\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.8.6.[^=]* =/ruckusZDWLANStaIPAddr\t\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.9.6.[^=]* =/ruckusZDWLANStaAvgRSSI\t\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.9.6.[^=]* =/ruckusZDWLANStaAvgRSSI\t\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.10.6.[^=]* =/ruckusZDWLANStaRxPkts\t\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.11.6.[^=]* =/ruckusZDWLANStaRxBytes\t\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.12.6.[^=]* =/ruckusZDWLANStaRxBytes\t\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.13.6.[^=]* =/ruckusZDWLANStaTxBytes\t\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.14.6.[^=]* =/ruckusZDWLANStaRetries\t\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.15.6.[^=]* =/ruckusZDWLANStaAssocTime\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.16.6.[^=]* =/ruckusZDWLANStaRxError\t\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.17.6.[^=]* =/ruckusZDWLANStaTxSuccess\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.18.6.[^=]* =/ruckusZDWLANSta11bgReassoc\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.19.6.[^=]* =/ruckusZDWLANStaAssocTimestamp\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.20.6.[^=]* =/ruckusZDWLANStaRetryBytes\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.21.6.[^=]* =/ruckusZDWLANStaSNR\t\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.22.6.[^=]* =/ruckusZDWLANStaRxDrop\t\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.23.6.[^=]* =/ruckusZDWLANStaTxDrop\t\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.24.6.[^=]* =/ruckusZDWLANStaTxError\t\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.30.6.[^=]* =/ruckusZDWLANStaVlanID\t\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.80.6.[^=]* =/ruckusZDWLANStaAuthMode\t=/' \
+      -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.81.6.[^=]* =/ruckusZDWLANStaSignalStrength\t=/' \
+| sed -e 's/^ruckusZDWLANSta//'
+fi
