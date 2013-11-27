@@ -1,0 +1,1 @@
+*/30 * * * * root /etc/admin/ruckus/logruckusapusage
