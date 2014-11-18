@@ -1,6 +1,5 @@
 #!/bin/sh
 # getruckusapnames
-
 # list all APs on the Ruckus ZoneDirector
 # including mac address, IP, model + description
 #
@@ -29,6 +28,7 @@ NEWBSSID=false; NEWSSID=false
 
 #Change CONTROLLERADDRESS to your own ZD controller address
 CONTROLLERADDRESS=192.168.1.99
+COMMUNITY=public
 
 OID="1.3.6.1.4.1.25053.1.2.2.4.1.1.1.1"
 
@@ -38,6 +38,10 @@ do
   case $1 in
     "--controller" )
       CONTROLLERADDRESS=$2
+      shift;shift
+      ;;
+    "--community" )
+      COMMUNITY=$2
       shift;shift
       ;;
     "--sedformat" )
@@ -54,6 +58,7 @@ do
       echo OPTIONS:
       echo "--help -? -h"
       echo "--controller <controlleraddress> ;# query the IP of the specified controller"
+      echo "--community <communitystring> ;# use the specified community string"
       echo "--debug ;# turn on debugging output"
       exit
       ;;
@@ -63,7 +68,8 @@ done
 
 
 {
-snmpwalk -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS $OID
+$DEBUG && echo "snmpwalk -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS $OID" >&2
+snmpwalk -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS $OID
 } \
 | sed -e 's/^.*'${OID}'.//' \
 | sed -e 's/\./ /' \
@@ -109,7 +115,7 @@ echo "${MACADDRESS} ${APNAME} ${IPADDRESS} ${MODEL} ${DESCRIPTION}"
 } \
 | if $SORT
 then
-  sort -k2,2
+  sort -k2,2 
 else
   cat
 fi \
@@ -119,7 +125,7 @@ then
   while read MAC HOSTNAME JUNK
   do
     echo ' \'
-    echo -e "  -e 's/${MAC}/${HOSTNAME}/'\c"
+    echo -e "  -e 's/${MAC}/${HOSTNAME}/I'\c"
   done \
   | tr -d '"'
   echo
