@@ -1,0 +1,132 @@
+#!/bin/sh
+# showdetected
+#
+# download the results of "get detected" from the ruckus wireless
+CONTROLLER=192.168.1.99
+# for all clients with an SNR(x10) less than
+SNRMINIMUM=300
+# with action minutes greater than
+ACTIONMAX=2
+# and SNR minutes less than
+SNRMINMINIMUM=2
+
+# (no actions were taken less than ACTIONMAX minutes ago and
+#  an SNR report was received less than SNRMINMINIMUM minutes ago)
+
+# Use an SNMP Commuity string of
+SNMPCOMMUNITY=public
+# to poll the controller for currently associated SNR values
+
+# if the current SNR(x10) value is more than
+SNRMARGIN=100
+# lower than the highest SNR reported by another AP
+# then nominate the client for deletion from its current AP.
+
+# note: This code should (but doesn't) check to make sure it's not recommending
+# a switch from a 5-gig radio to a 2.4 gig radio.
+# note: this code "maybe" should (but doesn't) take SSIDs into account.
+# (switching between vs within SSIDs)
+
+
+DEBUG=true
+DEBUG=false
+
+
+
+#./ruckusconf --debug --outfile getdetected --timeout 300 --command 'rksap_cli -A "get detected"' $CONTROLLER
+
+PREVMAC="nothing"
+
+#egrep -e "^ *[^: ]*: " -e " executed at " getdetected192.168.1.99.txt \
+
+egrep -e "^ *[^: ]*: " -e " executed at " getdetected${CONTROLLER}.txt \
+| egrep -v -e "^ *success:" -e "^ *failure:" -e "^ *total:" \
+| dos2unix \
+| sed -e 's/^.* executed at /executed_at /' \
+| while read NUM MAC DET24 DET50 ACT24A ACT24B ACT50A ACT50B ACTMIN24 ACTMIN50 SNR24 SNR50 SNRMIN24 SNRMIN50 PENALTY JUNK
+do
+  if [ "$NUM" = "executed_at" ]
+  then
+    APMAC="$MAC"
+    #echo "BLAH!!! $APMAC $NUM $MAC"
+  else
+    if [ "$SNR24" = "-" -o "$SNR24" = "0" ]
+    then
+      SNR="$SNR50"
+      SNRMIN="$SNRMIN50"
+      ACTMIN="$ACTMIN50"
+    else
+      SNR="$SNR24"
+      SNRMIN="$SNRMIN24"
+      ACTMIN="$ACTMIN24"
+    fi
+    if [ "$SNR" = "-" ]
+    then
+      SNR="0"
+    fi
+
+    # $DEBUG && echo "###" $NUM $MAC $DET24 $DET50 $ACT24A $ACT24B $ACT50A $ACT50B $ACTMIN24 $ACTMIN50 $SNR24 $SNR50 $SNRMIN24 $SNRMIN50
+$PENALTY $JUNK
+    if [ "$SNR" -gt 0 ]
+    then
+      if [ "$SNRMIN" = "-" ]
+      then
+        SNRMIN="0"
+      fi
+      if [ "$SNRMIN" -lt "$SNRMINMINIMUM" ]
+      then
+        if [ "$ACTMIN" = "-" ]
+        then
+          ACTMIN="99"
+        fi
+        if [ "$ACTMIN" -gt "$ACTIONMAX" ]
+        then
+          echo "$APMAC $MAC $SNR $SNRMIN $ACTMIN $PENALTY $JUNK"
+        fi
+      fi
+    fi
+  fi
+done > getdetected
+cat getdetected \
+| sort -k2,2 -k3,3nr \
+| while read APMAC MAC SNR SNRMIN ACTMIN PENALTY JUNK
+do
+  if [ "$MAC" != "$PREVMAC" ]
+  then
+    $DEBUG && echo "# $APMAC $MAC $SNR $SNRMIN $ACTMIN $PENALTY $JUNK"
+    DECMAC=`./mac2dec $MAC`
+    CURRENTSNR=`snmpwalk -On -m "" -v2c -c $SNMPCOMMUNITY 192.168.1.99 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.21.6.$DECMAC\
+               |sed -e 's/^[^=]*= //'`
+    CURRENTAP=`snmpwalk -On -m "" -v2c -c $SNMPCOMMUNITY 192.168.1.99 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.2.6.$DECMAC\
+              |sed -e 's/^[^=]*= //'`
+    if [ "$CURRENTSNR" != "No Such Instance currently exists at this OID" ]
+    then
+      $DEBUG && echo "CURRENTSNR is $CURRENTSNR"
+      CURRENTSNR=`echo "$CURRENTSNR"|sed -e 's/^[^:]*: //'`
+      CURRENTAP=`echo "$CURRENTAP"|sed -e 's/^[^:]*: //'`
+      let CURRENTSNR=$CURRENTSNR*10
+      let CURRENTSNRMARGIN=$CURRENTSNR+$SNRMARGIN
+      if [ "$CURRENTSNR" -lt 300 ]
+      then
+        if [ "$SNR" -gt "$CURRENTSNR" ]
+        then
+          if [ "$SNR" -gt "$CURRENTSNRMARGIN" -a "$CURRENTSNR" -gt 0 ]
+          then
+            let SNRGAIN=$SNR-$CURRENTSNR
+            SNRGAIN=`echo $SNRGAIN|sed -e 's/\(.\)$/.\1/'`
+            CURRENTAP=`echo $CURRENTAP \
+                      |sed -e 's/ /:/g' \
+                      | tr -s "[:upper:]" "[:lower:]"`
+            echo "$APMAC $MAC $SNR $SNRMIN $ACTMIN $PENALTY $JUNK nominated for deletion from $CURRENTAP $CURRENTSNR for a gain of $SNRGA
+IN dB"
+            echo './ruckusconf --debug --command "delete-station '"$MAC"'" '"$CONTROLLER"
+          else
+            # Not really nominated
+            echo "# $APMAC $MAC $SNR $SNRMIN $ACTMIN $PENALTY $JUNK nominated for deletion from $CURRENTAP $CURRENTSNR"
+          fi
+        fi
+      fi
+    fi
+  fi
+  PREVMAC="$MAC"
+done
