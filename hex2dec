@@ -1,0 +1,7 @@
+#!/bin/sh
+
+#convert the snmp Hex-STRING IP address format to a decimal IP address.
+
+#sed 's/Hex-STRING: \(.. .. .. ..\) */IP-Address: \1/'
+HEX=`echo $@|tr "[:lower:]" "[:upper:]"|tr " :" ";"`
+echo `( echo "ibase=16; $HEX;" ) | bc`|tr " " "."
