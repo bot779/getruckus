@@ -1,0 +1,9 @@
+#!/bin/sh
+
+# convert any mac address to a colon-separated mac address
+
+MAC=$1
+echo $MAC \
+|tr -d ".:-" \
+|tr "[:upper:]" "[:lower:]" \
+|sed 's/\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)/\1:\2:\3:\4:\5:\6/'
