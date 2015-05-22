@@ -21,8 +21,21 @@ SORT=true
 SHOWTOTALS=false
 SHOWTOTALS=true
 
+COMMUNITY=public
+
 #Change CONTROLLERADDRESS to your own ZD controller address
 CONTROLLERADDRESS=192.168.1.99
+BACKUPCONTROLLERADDRESS=192.168.1.100
+
+STATUS=`snmpget -On -m "" -v2c -c $COMMUNITY $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.1.1.1.1.30.0`
+STATUS=`echo $STATUS | sed -s 's/^.*INTEGER: //'`
+
+$DEBUG && echo STATUS is `echo "$STATUS"|od -c` >&2
+
+if [ "$STATUS" = "2" ]
+then
+  CONTROLLERADDRESS="$BACKUPCONTROLLERADDRESS"
+fi
 
 CLIENTMAC=""
 
@@ -31,6 +44,10 @@ do
   case $1 in
     "--controller" )
       CONTROLLERADDRESS=$2
+      shift;shift
+      ;;
+    "--community" )
+      COMMUNITY=$2
       shift;shift
       ;;
     "--debug" )
@@ -47,11 +64,12 @@ do
       ;;
     "--help" | "-?" | "-h" | * )
       echo Usage:
-      echo $0 "[OPTIONS] <IP-Address>"
+      echo $0 "[OPTIONS]"
       echo "Dump a list of connected clients"
       echo OPTIONS:
       echo "--help -? -h"
       echo "--controller <controlleraddress> ;# query the IP of the specified controller"
+      echo "--community <SNMPcommunityString> ;# use the specified SNMP community string"
       echo "--debug  ;# turn on debugging output"
       echo "--client ;# only report on the specified client"
       exit
@@ -69,13 +87,13 @@ then
 NEWBSSID=false; NEWSSID=false
 
 {
-snmpwalk -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.1
-snmpwalk -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.2
-snmpwalk -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.3
-snmpwalk -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.4
-snmpwalk -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.9
-snmpwalk -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.21
-snmpwalk -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.81
+snmpwalk -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.1
+snmpwalk -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.2
+snmpwalk -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.3
+snmpwalk -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.4
+snmpwalk -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.9
+snmpwalk -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.21
+snmpwalk -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.81
 } \
 | sed -e 's/^.*.25053.1.2.2.1.1.3.1.1.//' \
 | sort -t. -k3,3n -k4,4n -k5,5n -k6,6n -k7,7n -k8,8n -k1,1n \
@@ -208,33 +226,33 @@ CLIENTMAC=`echo $CLIENTMAC| tr " " "."`
 $DEBUG && echo CLIENTMAC = $CLIENTMAC
 
 (
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.1.6.$CLIENTMAC
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.2.6.$CLIENTMAC
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.3.6.$CLIENTMAC
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.4.6.$CLIENTMAC
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.5.6.$CLIENTMAC
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.6.6.$CLIENTMAC
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.7.6.$CLIENTMAC
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.8.6.$CLIENTMAC
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.9.6.$CLIENTMAC
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.10.6.$CLIENTMAC
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.11.6.$CLIENTMAC
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.12.6.$CLIENTMAC
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.13.6.$CLIENTMAC
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.14.6.$CLIENTMAC
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.15.6.$CLIENTMAC
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.16.6.$CLIENTMAC
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.17.6.$CLIENTMAC
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.18.6.$CLIENTMAC
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.19.6.$CLIENTMAC
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.20.6.$CLIENTMAC
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.21.6.$CLIENTMAC
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.22.6.$CLIENTMAC
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.23.6.$CLIENTMAC
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.24.6.$CLIENTMAC
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.30.6.$CLIENTMAC
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.80.6.$CLIENTMAC
-snmpget -On -c ITOVWREAD -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.81.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.1.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.2.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.3.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.4.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.5.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.6.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.7.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.8.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.9.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.10.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.11.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.12.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.13.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.14.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.15.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.16.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.17.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.18.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.19.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.20.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.21.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.22.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.23.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.24.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.30.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.80.6.$CLIENTMAC
+snmpget -On -c $COMMUNITY -v2c -Pe -m "" $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.81.6.$CLIENTMAC
 ) \
 | sed -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.1.6.[^=]* =/ruckusZDWLANStaMacAddr\t\t=/' \
       -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.3.1.1.2.6.[^=]* =/ruckusZDWLANStaAPMacAddr\t=/' \
