@@ -1,0 +1,131 @@
+#!/bin/sh
+
+# getruckusapbyuptime
+# List APs in order of uptime (lowest first)
+# William Burns
+
+COMMUNITY=public
+
+#Change CONTROLLERADDRESS to your own ZD controller address
+CONTROLLERADDRESS=192.168.1.99
+BACKUPCONTROLLERADDRESS=192.168.1.98
+
+
+DEBUG=false
+STATUS=`snmpget -On -m "" -v2c -c $COMMUNITY $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.1.1.1.1.30.0`
+STATUS=`echo $STATUS | sed -s 's/^.*INTEGER: //'`
+
+$DEBUG && echo STATUS is `echo "$STATUS"|od -c` >&2
+
+if [ "$STATUS" = "2" ]
+then
+  CONTROLLERADDRESS="$BACKUPCONTROLLERADDRESS"
+fi
+
+SORT=true
+
+while echo $1 |grep "^-" >/dev/null
+do
+  case $1 in
+    "--controller" )
+      CONTROLLERADDRESS=$2
+      shift;shift
+      ;;
+    "--community" )
+      COMMUNITY=$2
+      shift;shift
+      ;;
+    "--debug" )
+      DEBUG=true
+      shift
+      ;;
+    "--nosort" )
+      SORT=false
+      shift
+      ;;
+    "--help" | "-?" | "-h" | * )
+      echo "List APs in order of uptime (lowest first)"
+      echo
+      echo Usage:
+      echo $0 "[OPTIONS]"
+      echo OPTIONS:
+      echo "--help -? -h"
+      echo "--controller <controlleraddress> ;# query the IP of the specified controller"
+      echo "--community <SNMPcommunityString> ;# use the specified SNMP community string"
+      echo "--debug  ;# turn on debugging output"
+      exit
+      ;;
+  esac
+done
+
+
+
+PREVINDEX="0"
+
+{
+# http://www.oidview.com/mibs/25053/RUCKUS-ZD-WLAN-MIB.html
+# watch for errors in this document (especially IP Address)
+
+for OID in 1.3.6.1.4.1.25053.1.2.2.1.1.2.1.1.6 \
+           1.3.6.1.4.1.25053.1.2.2.1.1.2.1.1.10 \
+           1.3.6.1.4.1.25053.1.2.2.1.1.2.1.1.1 \
+           1.3.6.1.4.1.25053.1.2.2.1.1.2.1.1.4 \
+           1.3.6.1.4.1.25053.1.2.2.1.1.2.1.1.2 \
+           1.3.6.1.4.1.25053.1.2.2.1.1.2.1.1.3
+do
+  $DEBUG && echo 'snmpwalk -On -m "" -v2c -c'" $COMMUNITY $CONTROLLERADDRESS $OID" >&2
+  snmpwalk -On -m "" -v2c -c $COMMUNITY $CONTROLLERADDRESS $OID
+done
+} | \
+sed -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.2.1.1.6.6./uptime ./' \
+    -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.2.1.1.10.6./IPAddr ./' \
+    -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.2.1.1.1.6./MACAddr ./' \
+    -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.2.1.1.4.6./APModel ./' \
+    -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.2.1.1.2.6./Descr ./' \
+    -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.2.1.1.3.6./Status ./' \
+| sort -t. -k2,2n -k3,3n -k4,4n -k5,5n -k6,6n -k7,7n \
+| { while read FIELD INDEX TYPE EQ VALUE
+do
+  if [ "$INDEX" != "$PREVINDEX" ]
+  then
+    if [ "$PREVINDEX" != "0" ]
+    then
+      echo UPTIME~${UPTIME}~IPAddr~${IPADDR}~MACAddr~${MACADDR}~APModel~${APMODEL}~Descr~${DESCR}~Status~${STATUS}
+    fi
+  fi
+  case $FIELD in
+    uptime )
+      UPTIME="$VALUE"
+      ;;
+    IPAddr )
+      IPADDR="$VALUE"
+      ;;
+    MACAddr )
+      MACADDR="$VALUE"
+      ;;
+    APModel )
+      APMODEL="$VALUE"
+      ;;
+    Descr )
+      DESCR="$VALUE"
+      ;;
+    Status )
+      STATUS="$VALUE"
+      ;;
+    * )
+      echo "Hey! unknown FIELD is $INDEX"
+      ;;
+  esac
+  PREVINDEX="$INDEX"
+done
+echo UPTIME~${UPTIME}~IPAddr~${IPADDR}~MACAddr~${MACADDR}~APModel~${APMODEL}~Descr~${DESCR}~Status~${STATUS}
+} \
+| sed -e 's/ /_/g' \
+| sed -e 's/~/ /g' \
+| if $SORT
+then
+  sort -r -t"(" -k2,2n
+else
+  cat
+fi \
+| sed 's/MACAddr \(..\)_\(..\)_\(..\)_\(..\)_\(..\)_\(..\) /MACAddr \1:\2:\3:\4:\5:\6 /'
