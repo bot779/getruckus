@@ -22,7 +22,7 @@ COMMUNITY=public
 
 #Change CONTROLLERADDRESS to your own ZD controller address
 CONTROLLERADDRESS=192.168.1.99
-BACKUPCONTROLLERADDRESS=143.48.126.2
+BACKUPCONTROLLERADDRESS=192.168.1.100
 
 STATUS=`snmpget -On -m "" -v2c -c $COMMUNITY $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.1.1.1.1.30.0`
 STATUS=`echo $STATUS | sed -s 's/^.*INTEGER: //'`
@@ -67,8 +67,10 @@ do
       echo OPTIONS:
       echo "--help -? -h"
       echo "--controller <controlleraddress> ;# query the IP of the specified controller"
-      echo "--community <communitystring> ;# use the specified community string"
-      echo "--debug ;# turn on debugging output"
+      echo "--community <communitystring>    ;# use the specified community string"
+      echo "--sedformat   ;# produce sed commands to convert AP MAC to AP Name"
+      echo "--underspace  ;# convert spaces to underscores in output"
+      echo "--debug       ;# turn on debugging output"
       exit
       ;;
   esac
@@ -130,7 +132,7 @@ else
 fi \
 | if $SORT
 then
-  sort -k2,2 
+  sort -k2,2
 else
   cat
 fi \
