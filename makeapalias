@@ -1,0 +1,29 @@
+#!/bin/sh
+
+# make an ApAlias file for use with inSSIDer Office
+# which is a WiFi Scanner made by metageek.
+
+# this allows inSSIDer to show you the names of all your Ruckus APs.
+# (instead of showing you BSSIDs)
+
+PREVBSSID="nothing"
+
+./getruckusapvap \
+| sort -t "," -k1,1 \
+|sed 's/.,/ X ,/' \
+| while read BSSID X NAME
+do
+  if [ "${BSSID}" != "${PREVBSSID}" ]
+  then
+    echo ${BSSID}${X}${NAME}
+    PREVBSSID="${BSSID}"
+  fi
+done \
+> ApAlias
+echo results in ApAlias
+echo copy this to inSSIDer"'"s "C:\Users\<username>\AppData\Local\MetaGeek,_LLC\ApAlias" file
+
+echo
+echo note:
+echo if ./getruckusapvap failed, you may need to provide it with the address of your controller
+echo ... by editing that command and replacing the CONTROLLERADDRESS value
