@@ -1,0 +1,158 @@
+#!/bin/sh
+
+# getruckusapvap
+
+# Create a comma separated list of:
+# Virtual AP (VAP) BSSIDs (MAC Addresses) , Ruckus AP "Management" MAC Addresses (or AP Names if/when available)
+# ... and optionally the SSID (WiFi name)
+#
+# which is the kind of info you need for MetaGeek's inSSIDer Office
+# (to make the "AP Alias" feature work)
+# the ./makeapalias command creates an actual MetaGeek "ApAlias" file
+#
+# William Burns
+
+
+DEBUG=false
+#DEBUG=true
+
+COMMUNITY=public
+
+#Change CONTROLLERADDRESS to your own ZD controller address
+CONTROLLERADDRESS=192.168.1.99
+BACKUPCONTROLLERADDRESS=192.168.1.100
+
+STATUS=`snmpget -On -m "" -v2c -c $COMMUNITY $CONTROLLERADDRESS 1.3.6.1.4.1.25053.1.2.1.1.1.1.30.0`
+STATUS=`echo $STATUS | sed -s 's/^.*INTEGER: //'`
+
+$DEBUG && echo STATUS is `echo "$STATUS"|od -c` >&2
+
+if [ "$STATUS" = "2" ]
+then
+  CONTROLLERADDRESS="$BACKUPCONTROLLERADDRESS"
+fi
+
+SHOWSSID=false
+NONAMES=false
+NAMESORT=false
+
+while echo $1 |grep "^-" >/dev/null
+do
+  case $1 in
+    "--controller" )
+      CONTROLLERADDRESS=$2
+      shift;shift
+      ;;
+    "--community" )
+      COMMUNITY=$2
+      shift;shift
+      ;;
+    "--debug" )
+      DEBUG=true
+      shift
+      ;;
+    "--ssid" )
+      SHOWSSID=true
+      shift
+      ;;
+    "--nonames" )
+      NONAMES=true
+      shift
+      ;;
+    "--namesort" )
+      NAMESORT=true
+      shift
+      ;;
+    "--help" | "-?" | "-h" | * )
+      echo Usage:
+      echo $0 "[OPTIONS]"
+      echo "Dump a list of connected clients"
+      echo OPTIONS:
+      echo "--help -? -h"
+      echo "--controller <controlleraddress>  ;# query the IP of the specified controller"
+      echo "--community <SNMPcommunityString> ;# use the specified SNMP community string"
+      echo "--ssid     ;# include SSID in the list"
+      echo "--nonames  ;# dont try to convert MAC addresses to AP names"
+      echo "--namesort ;# sort output by AP name (or management MAC)"
+      echo "--debug    ;# turn on debugging output"
+      exit
+      ;;
+  esac
+done
+
+
+
+(
+$DEBUG && echo "snmpwalk -On -c ${COMMUNITY} -v2c -Pe -m "'""'" ${CONTROLLERADDRESS} .1.3.6.1.4.1.25053.1.2.2.1.1.2.3.1.1" >&2
+snmpwalk -On -c ${COMMUNITY} -v2c -Pe -m "" ${CONTROLLERADDRESS} .1.3.6.1.4.1.25053.1.2.2.1.1.2.3.1.1
+$DEBUG && echo "snmpwalk -On -c ${COMMUNITY} -v2c -Pe -m "'""'" ${CONTROLLERADDRESS} .1.3.6.1.4.1.25053.1.2.2.1.1.2.3.1.2" >&2
+snmpwalk -On -c ${COMMUNITY} -v2c -Pe -m "" ${CONTROLLERADDRESS} .1.3.6.1.4.1.25053.1.2.2.1.1.2.3.1.2
+$DEBUG && echo "snmpwalk -On -c ${COMMUNITY} -v2c -Pe -m "'""'" ${CONTROLLERADDRESS} .1.3.6.1.4.1.25053.1.2.2.1.1.2.3.1.3" >&2
+snmpwalk -On -c ${COMMUNITY} -v2c -Pe -m "" ${CONTROLLERADDRESS} .1.3.6.1.4.1.25053.1.2.2.1.1.2.3.1.3
+
+#snmpwalk -On -c public -v2c -Pe -m "" 192.168.1.100 .1.3.6.1.4.1.25053.1.2.2.1.1.2.3.1.2
+#snmpwalk -On -c public -v2c -Pe -m "" 192.168.1.100 .1.3.6.1.4.1.25053.1.2.2.1.1.2.3.1.3
+
+) \
+| sed -e 's/^.1.3.6.1.4.1.25053.1.2.2.1.1.2.3.1.\([^.]*\)./\1 /' \
+| sort -k2,2 -k1,1n \
+| { while read FLDNUM RECNUM EQ FLDTYPE VALUE
+do
+  #echo $FLDNUM $RECNUM $EQ $FLDTYPE $VALUE
+  if [ "$FLDNUM" = "1" ]
+  then
+    if [ -z "$BSSIDMAC" ]
+    then
+      echo BSSIDMAC, APMAC/NAME, SSID >&2
+    else
+      if $SHOWSSID
+      then
+        echo "${BSSIDMAC}, ${APMAC}, ${SSID}"
+      else
+        echo "${BSSIDMAC},${APMAC}"
+      fi
+    fi
+
+    #BSSIDMAC=$VALUE
+    BSSIDMAC=`echo $VALUE| tr -s " " ":"`
+  fi
+
+  if [ "$FLDNUM" = "2" ]
+  then
+    APMAC=`echo $VALUE| tr -s " " ":"`
+  fi
+
+  if [ "$FLDNUM" = "3" ]
+  then
+    SSID="$VALUE"
+  fi
+
+done
+if $SHOWSSID
+then
+  echo "${BSSIDMAC}, ${APMAC}, ${SSID}"
+else
+  echo "${BSSIDMAC},${APMAC}"
+fi
+} \
+| if $NONAMES
+then
+  cat
+else
+  if [ -x ./apnames.sed ]
+  then
+    ./apnames.sed
+  else
+    cat
+    echo  >&2
+    echo "Warning: ./apnames.sed not found or executable" >&2
+    echo "cannot convert management MAC to AP name" >&2
+    echo "please run ./makeapnames.sed" >&2
+  fi
+fi \
+| if $NAMESORT
+then
+  sort -t "," -k2,2
+else
+  cat
+fi
